@@ -9,6 +9,12 @@
 #   warn    - violations are reported in the PR but do not block
 #   enforce - violations block the PR
 #
+# exemptible (optional, default false):
+#   true only where a legitimate, time-boxed exception exists (for example a
+#   planned teardown). Exemptions live in config/exemptions.yaml and are read
+#   from the base branch, so they must be reviewed and merged before the
+#   change they cover.
+#
 # Framework references:
 #   iso27001_2022 - ISO/IEC 27001:2022 Annex A control IDs
 #   soc2          - AICPA Trust Services Criteria (2017, revised points of focus 2022)
@@ -79,6 +85,25 @@ controls:
     mode: {sandbox: warn, prod: enforce}
     owner: platform
 
+  LG-BCP-02:
+    title: Protected resources are not destroyed without an approved exemption
+    requirement: >-
+      Changes do not destroy or replace Key Vaults, keys, managed HSMs, or
+      databases and storage accounts that are not classified public or
+      internal, unless a time-boxed exemption with a change ticket was
+      approved and merged beforehand.
+    frameworks:
+      iso27001_2022: [A.8.13, A.8.32]
+      soc2: [CC8.1, A1.2]
+      cis_azure: []
+    enforcement:
+      pr_gate: [ledger.terraform.protection]
+      admission: []
+    # Sandbox is torn down routinely; production blocks.
+    mode: {sandbox: warn, prod: enforce}
+    exemptible: true
+    owner: platform
+
   LG-KEY-01:
     title: Key Vault hardened against deletion and public access
     requirement: >-
@@ -130,7 +155,9 @@ controls:
     title: No privileged workloads
     requirement: >-
       Pods do not run privileged containers, do not allow privilege
-      escalation, and do not share host namespaces.
+      escalation, do not share host namespaces, do not add Linux
+      capabilities other than NET_BIND_SERVICE, do not mount hostPath
+      volumes, and run as a non-root user.
     frameworks:
       iso27001_2022: [A.8.2, A.8.9]
       soc2: [CC6.8]

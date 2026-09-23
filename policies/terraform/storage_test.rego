@@ -78,3 +78,10 @@ test_deleted_account_is_ignored if {
 	plan := t.plan([t.change("azurerm_storage_account", ["delete"], null)])
 	count(storage.findings) == 0 with input as plan
 }
+
+test_unknown_data_class_requires_cmk if {
+	known := object.remove(t.tags("internal"), {"data-class"})
+	rc := t.create_unknown("azurerm_storage_account", object.union(compliant, {"tags": known}), {"tags": {"data-class": true}})
+	f := storage.findings with input as t.plan([rc])
+	t.controls(f) == {"LG-DATA-01"}
+}

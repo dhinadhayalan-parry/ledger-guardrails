@@ -4,6 +4,8 @@ metadata:
   name: sniffer
   namespace: ledger
 spec:
+  securityContext:
+    runAsNonRoot: true
   hostNetwork: true
   hostPID: true
   containers:

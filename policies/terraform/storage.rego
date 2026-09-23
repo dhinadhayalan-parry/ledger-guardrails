@@ -60,10 +60,10 @@ findings contains lib.finding("LG-DATA-02", rc, msg) if {
 # repository standardises on the inline block. See docs/adr/0002.
 findings contains lib.finding("LG-DATA-01", rc, msg) if {
 	some rc in accounts
-	lib.is_sensitive(rc.change.after)
+	lib.is_sensitive(rc)
 	not lib.has_block(rc.change.after, "customer_managed_key")
 	msg := sprintf(
 		"data-class %q requires an inline customer_managed_key block",
-		[lib.data_class(rc.change.after)],
+		[lib.data_class(rc)],
 	)
 }

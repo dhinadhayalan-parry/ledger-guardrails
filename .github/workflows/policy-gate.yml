@@ -52,10 +52,26 @@ jobs:
     needs: policy-tests
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    env:
+      # Pull requests are judged by the policies, catalog and exemptions of
+      # their base commit, never by the versions they change themselves.
+      POLICY_ROOT: ${{ github.event_name == 'pull_request' && '.trusted' || '.' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - name: Check out trusted policies (pull request base commit)
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: .trusted
+          persist-credentials: false
+          sparse-checkout: |
+            policies/terraform
+            controls
+            config
 
       - name: Install pinned toolchain
         run: |
@@ -65,10 +81,18 @@ jobs:
       - name: Non-compliant example is rejected with exactly the expected findings
         run: make examples
 
-      - name: Sandbox stack passes the sandbox gate
+      - name: Sandbox stack passes the sandbox gate (trusted policies)
         run: |
           set -o pipefail
-          make --no-print-directory gate ENV=sandbox 2>&1 | tee gate.txt
+          echo "policy source: ${POLICY_ROOT}"
+          make --no-print-directory gate ENV=sandbox POLICY_ROOT="${POLICY_ROOT}" 2>&1 | tee gate.txt
+
+      # The merge gate above uses the base commit's policies. This step checks
+      # the other direction: a policy change in this pull request must not
+      # reject the compliant reference stack.
+      - name: Sandbox stack still passes the policies proposed in this pull request
+        if: github.event_name == 'pull_request'
+        run: make --no-print-directory gate ENV=sandbox POLICY_ROOT=.
 
       - name: Job summary
         if: always()
@@ -85,6 +109,10 @@ jobs:
     needs: policy-tests
     # Runs only once the Azure OIDC variables exist, and never for pull
     # requests from forks, which cannot receive an OIDC token for this repo.
+    # `terraform plan` executes code from the pull request (providers, external
+    # data sources) while holding the plan identity's token, so the `plan`
+    # environment requires a reviewer before the job starts, and the identity's
+    # federated credential trusts only that environment (governance/github).
     if: >-
       vars.AZURE_PLAN_CLIENT_ID != '' &&
       (github.event_name != 'pull_request' ||
@@ -106,6 +134,7 @@ jobs:
       TF_VAR_cost_center: ${{ vars.LEDGER_COST_CENTER }}
       TF_VAR_postgres_entra_admin: ${{ vars.LEDGER_POSTGRES_ENTRA_ADMIN }}
       TF_VAR_aks_admin_group_object_ids: ${{ vars.LEDGER_AKS_ADMIN_GROUP_IDS }}
+      POLICY_ROOT: ${{ github.event_name == 'pull_request' && '.trusted' || '.' }}
     defaults:
       run:
         working-directory: infra/envs/sandbox
@@ -113,6 +142,18 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - name: Check out trusted policies (pull request base commit)
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: .trusted
+          persist-credentials: false
+          sparse-checkout: |
+            policies/terraform
+            controls
+            config
 
       - name: Install pinned toolchain
         working-directory: ${{ github.workspace }}
@@ -144,10 +185,13 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: |
           set -o pipefail
+          exemptions=()
+          [[ -f "${POLICY_ROOT}/config/exemptions.yaml" ]] && exemptions=(--data "${POLICY_ROOT}/config/exemptions.yaml")
           conftest test "$RUNNER_TEMP/plan.json" \
-            --policy policies/terraform \
-            --data controls/catalog.yaml \
-            --data config/envs/sandbox.yaml \
+            --policy "${POLICY_ROOT}/policies/terraform" \
+            --data "${POLICY_ROOT}/controls/catalog.yaml" \
+            --data "${POLICY_ROOT}/config/envs/sandbox.yaml" \
+            "${exemptions[@]}" \
             --no-color 2>&1 | tee "$RUNNER_TEMP/gate.txt"
 
       - name: Job summary

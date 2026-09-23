@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: batch
+  namespace: ledger
+spec:
+  containers:
+    - name: batch
+      image: crledgersandbox.azurecr.io/ledger/batch@sha256:4f3c2b1a0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c3b
+      securityContext:
+        allowPrivilegeEscalation: false

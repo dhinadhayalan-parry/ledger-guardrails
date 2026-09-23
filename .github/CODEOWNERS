@@ -1,10 +1,16 @@
-# Changes to what is enforced, or how, need a security review.
+# Changes to what is enforced, or how, need a security review. The gate's
+# integrity depends on everything below: policies and catalog (what is
+# enforced), exemptions and environments (config/), the gate plumbing
+# (Makefile, scripts/, workflows), and repository governance.
 # Personal account: teams are not available, so the owner reviews everything.
 # In an organisation, split these into @<org>/security-reviewers and @<org>/platform.
 /controls/                      @dhinadhayalan-parry
 /policies/                      @dhinadhayalan-parry
-/config/envs/                   @dhinadhayalan-parry
+/config/                        @dhinadhayalan-parry
+/scripts/                       @dhinadhayalan-parry
+/Makefile                       @dhinadhayalan-parry
 /.github/                       @dhinadhayalan-parry
+/governance/                    @dhinadhayalan-parry
 
 # Infrastructure changes are gated by the policies above.
 /infra/                         @dhinadhayalan-parry

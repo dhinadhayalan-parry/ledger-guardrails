@@ -11,6 +11,8 @@ Checks
   * every admission template is referenced by the catalog, carries matching
     control annotations and messages, has a constraint, and is covered by the
     gator suite
+  * exemptions in config/exemptions.yaml are well formed, time-boxed, and only
+    for controls the catalog marks exemptible
   * the control matrix in README.md is up to date
 
 Usage
@@ -21,6 +23,7 @@ Usage
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import json
 import logging
 import re
@@ -38,6 +41,8 @@ CONTROL_ID = re.compile(r"^LG-[A-Z0-9]+-\d{2}$")
 FINDING_CALL = re.compile(r'lib\.finding\(\s*"(LG-[A-Z0-9]+-\d{2})"')
 TEMPLATE_MSG = re.compile(r"\[(LG-[A-Z0-9]+-\d{2})\]")
 MODES = {"warn", "enforce"}
+EXEMPTION_FIELDS = {"control", "env", "resource", "reason", "ticket", "approved_by", "expires_on"}
+EXEMPTION_MAX_DAYS = 30
 POLICY_PREFIX = ("data", "ledger", "terraform")
 MATRIX_START = "<!-- control-matrix:start -->"
 MATRIX_END = "<!-- control-matrix:end -->"
@@ -91,6 +96,45 @@ def check_catalog(catalog: dict, envs: list[str], report: Report) -> None:
         enforcement = ctl.get("enforcement") or {}
         if not any(enforcement.get(k) for k in ("pr_gate", "admission")):
             report.error(f"catalog: {cid} is not enforced by any policy")
+        if not isinstance(ctl.get("exemptible", False), bool):
+            report.error(f"catalog: {cid} exemptible must be true or false")
+
+
+def check_exemptions(root: Path, catalog: dict, envs: list[str], report: Report, today: dt.date) -> int:
+    doc = load_yaml(root / "config" / "exemptions.yaml")
+    entries = doc.get("exemptions") if isinstance(doc, dict) else None
+    if not isinstance(entries, list):
+        report.error("exemptions: config/exemptions.yaml must contain an 'exemptions' list")
+        return 0
+    latest = today + dt.timedelta(days=EXEMPTION_MAX_DAYS)
+    for i, entry in enumerate(entries):
+        where = f"exemptions[{i}]"
+        if not isinstance(entry, dict):
+            report.error(f"{where}: must be a mapping")
+            continue
+        if set(entry) != EXEMPTION_FIELDS:
+            report.error(f"{where}: fields must be exactly {sorted(EXEMPTION_FIELDS)}, got {sorted(entry)}")
+        for key in EXEMPTION_FIELDS & set(entry):
+            if not isinstance(entry[key], str) or not entry[key].strip():
+                report.error(f"{where}.{key}: must be a non-empty quoted string")
+        cid = entry.get("control")
+        if cid not in catalog:
+            report.error(f"{where}: unknown control {cid!r}")
+        elif catalog[cid].get("exemptible") is not True:
+            report.error(f"{where}: control {cid} is not exemptible")
+        if entry.get("env") not in envs:
+            report.error(f"{where}: env must be one of {envs}, got {entry.get('env')!r}")
+        try:
+            expires = dt.date.fromisoformat(str(entry.get("expires_on")))
+        except ValueError:
+            report.error(f"{where}.expires_on: must be YYYY-MM-DD")
+            continue
+        if expires > latest:
+            report.error(f"{where}.expires_on: {expires} is more than {EXEMPTION_MAX_DAYS} days ahead")
+        elif expires < today:
+            # The gate already ignores it; warn rather than fail unrelated builds.
+            LOG.warning("%s: expired on %s and no longer applies; remove it", where, expires)
+    return len(entries)
 
 
 def opa_inspect(opa: str, policy_dir: Path) -> dict:
@@ -273,14 +317,15 @@ def main() -> int:
     check_catalog(catalog, envs, report)
     packages = check_rego(root, args.opa, catalog, report)
     check_admission(root, catalog, report)
+    exemptions = check_exemptions(root, catalog, envs, report, dt.datetime.now(dt.timezone.utc).date())
     sync_readme(root, render_matrix(catalog, envs), args.write_readme, report)
 
     if report.errors:
         LOG.error("%d traceability problem(s)", len(report.errors))
         return 1
     LOG.info(
-        "OK: %d controls, %d Rego packages, environments %s",
-        len(catalog), len(packages), ", ".join(envs),
+        "OK: %d controls, %d Rego packages, %d exemptions, environments %s",
+        len(catalog), len(packages), exemptions, ", ".join(envs),
     )
     return 0
 

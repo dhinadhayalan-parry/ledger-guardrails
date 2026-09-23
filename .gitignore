@@ -15,6 +15,9 @@ override.tf.json
 .tools/
 build/
 
+# Trusted policy checkout used by CI (base commit of a pull request)
+.trusted/
+
 # Python
 __pycache__/
 *.pyc

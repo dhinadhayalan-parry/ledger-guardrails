@@ -38,7 +38,7 @@ resource "azurerm_network_security_rule" "deny_internet_management" {
   priority                    = 100
   direction                   = "Inbound"
   access                      = "Deny"
-  protocol                    = "Tcp"
+  protocol                    = "*" # RDP also listens on UDP 3389
   source_address_prefix       = "Internet"
   source_port_range           = "*"
   destination_address_prefix  = "*"
