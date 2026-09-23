@@ -52,3 +52,17 @@ test_confidential_does_not_require_geo_backup if {
 	after := t.with_attrs(compliant_payment, {"tags": t.tags("confidential"), "geo_redundant_backup_enabled": false})
 	count(findings_for(after)) == 0
 }
+
+# Tags computed at apply time must not switch LG-DATA-01 and LG-BCP-01 off.
+unknown_tags_findings(after) := f if {
+	rc := t.create_unknown("azurerm_postgresql_flexible_server", t.without_attr(after, "tags"), {"tags": true})
+	f := postgres.findings with input as t.plan([rc])
+}
+
+test_unknown_tags_require_payment_controls if {
+	t.controls(unknown_tags_findings(compliant)) == {"LG-DATA-01", "LG-BCP-01"}
+}
+
+test_unknown_tags_hardened_server_passes if {
+	count(unknown_tags_findings(compliant_payment)) == 0
+}

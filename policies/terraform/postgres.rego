@@ -33,17 +33,17 @@ findings contains lib.finding("LG-DB-01", rc, msg) if {
 
 findings contains lib.finding("LG-DATA-01", rc, msg) if {
 	some rc in servers
-	lib.is_sensitive(rc.change.after)
+	lib.is_sensitive(rc)
 	not lib.has_block(rc.change.after, "customer_managed_key")
 	msg := sprintf(
 		"data-class %q requires a customer_managed_key block",
-		[lib.data_class(rc.change.after)],
+		[lib.data_class(rc)],
 	)
 }
 
 findings contains lib.finding("LG-BCP-01", rc, msg) if {
 	some rc in servers
-	lib.is_payment(rc.change.after)
+	lib.is_payment(rc)
 	not rc.change.after.geo_redundant_backup_enabled == true
 	msg := "data-class \"payment\" requires geo_redundant_backup_enabled = true"
 }

@@ -9,7 +9,7 @@ Rego policies evaluate the JSON from `terraform show -json <planfile>`. That doc
 
 ## Decisions
 
-**Evaluate creates and updates only.** `lib.changes` selects managed resources whose actions include `create` or `update`. A replacement (`delete` + `create`) is included. A pure delete is ignored, so a PR that removes a non-compliant resource is never blocked by it.
+**Evaluate creates and updates only.** `lib.changes` selects managed resources whose actions include `create` or `update`. A replacement (`delete` + `create`) is included. A pure delete is ignored by the hardening policies, so a PR that removes a non-compliant resource is never blocked by them. Deletion itself is governed by one dedicated package, `protection.rego` (LG-BCP-02), which blocks destroying or replacing Key Vaults, keys and unclassified or sensitive data stores unless an exemption was merged first (ADR 0003).
 
 **Security-relevant computed attributes must be explicit.** Attributes such as `public_network_access` on storage or `public_network_access_enabled` on Key Vault and PostgreSQL are optional and computed. When they are omitted, the plan shows them as unknown and the key is absent from `after`. A check like `after.x != "Disabled"` then never fires. Policies are written as `not after.x == <safe value>`, which fails when the value is unknown. The message tells the author to set the value explicitly. Relying on the provider's default is how insecure defaults slip through.
 
@@ -17,7 +17,7 @@ Rego policies evaluate the JSON from `terraform show -json <planfile>`. That doc
 
 **Customer-managed keys on storage use the inline block.** The standalone `azurerm_storage_account_customer_managed_key` resource references the account by ID, which is unknown at plan time for a new account, so a plan-time policy cannot reliably link the two. This repository standardises on the inline `customer_managed_key` block. The limitation disappears at the Azure Policy layer, which evaluates the deployed resource.
 
-**Tags unknown at plan time are not evaluated.** If `tags` is computed from values only known after apply, it is absent from `after` and `tags.rego` skips the resource. The Azure Policy tag rules in Phase 1 close that gap.
+**An unknown data class is the strictest class.** If `tags`, or only its `data-class` value, is computed from values known after apply, it is absent from `after` and marked in `after_unknown`. `lib.data_class` then returns `payment`, so the data controls (customer-managed keys, geo-redundant backups) still apply and a computed tag cannot switch them off. A fully hardened resource passes. `tags.rego` counts an individually unknown tag as present. A tag map that is unknown as a whole cannot be checked for completeness at plan time; the Azure Policy tag rules in Phase 1 close that gap.
 
 **The mode comes from the catalog, not the policy.** Policies only emit findings. `gate.rego` maps each finding to `deny` or `warn` using `controls.<id>.mode.<env>`. An unknown environment is treated as `prod`, and a control missing from the catalog is enforced, so a configuration mistake cannot make the gate fail open.
 

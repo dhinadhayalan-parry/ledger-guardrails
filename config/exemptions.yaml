@@ -1,0 +1,30 @@
+# Time-boxed exemptions from blocking findings, reviewed like code.
+#
+# The gate reads this file from the base branch of a pull request, so an
+# exemption only takes effect after it has been reviewed and merged on its
+# own, before the change it covers. An exemption downgrades one finding to a
+# visible warning; it never hides it.
+#
+# Only controls marked `exemptible: true` in controls/catalog.yaml can be
+# exempted. The gate ignores expired or malformed entries, so the change is
+# blocked again. scripts/traceability.py rejects malformed entries and reports
+# expired ones for removal.
+#
+# Fields (all required, strings):
+#   control     control ID, for example LG-BCP-02
+#   env         environment the exemption applies to (sandbox, prod)
+#   resource    Terraform resource address exactly as it appears in the plan
+#   reason      why the control cannot be met
+#   ticket      change or risk ticket that approved the exemption
+#   approved_by who approved it
+#   expires_on  last day it applies, "YYYY-MM-DD" (UTC), at most 30 days ahead
+#
+# Example:
+#   - control: LG-BCP-02
+#     env: prod
+#     resource: azurerm_key_vault.main
+#     reason: Vault replaced by kv-ledger-prod-2 after key migration
+#     ticket: CHG-1042
+#     approved_by: "@security-lead"
+#     expires_on: "2026-10-15"
+exemptions: []

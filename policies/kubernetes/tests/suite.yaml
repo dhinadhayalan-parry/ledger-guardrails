@@ -34,6 +34,32 @@ tests:
         assertions:
           - violations: 2
             message: '"debugger"'
+      - name: added capabilities other than NET_BIND_SERVICE are denied
+        object: samples/pod-capabilities.yaml
+        assertions:
+          - violations: 2
+          - violations: 1
+            message: NET_ADMIN
+          - violations: 1
+            message: CAP_SYS_ADMIN
+      - name: hostPath volumes are denied
+        object: samples/pod-host-path.yaml
+        assertions:
+          - violations: 1
+            message: '"host-root" must not use hostPath'
+      - name: runAsNonRoot unset is denied
+        object: samples/pod-root-unset.yaml
+        assertions:
+          - violations: 1
+            message: must run as non-root
+      - name: container settings override the pod security context
+        object: samples/pod-root-override.yaml
+        assertions:
+          - violations: 2
+          - violations: 1
+            message: '"opts-out" must run as non-root'
+          - violations: 1
+            message: '"uid-zero" must not run as UID 0'
       - name: kube-system is excluded
         object: samples/pod-kube-system-privileged.yaml
         assertions:

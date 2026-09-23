@@ -53,8 +53,23 @@ nested_is(after, name, attr, value) if block(after, name)[attr] == value
 # Data classes that require customer-managed keys and stricter handling.
 sensitive_classes := {"confidential", "payment"}
 
-data_class(after) := after.tags["data-class"]
+# The strictest class, assumed when the real class is unknown at plan time.
+strictest_class := "payment"
 
-is_sensitive(after) if data_class(after) in sensitive_classes
+# Planned data class of a resource change. A data-class tag whose value is only
+# known after apply (for example built from another resource's attribute) is
+# treated as the strictest class, so a computed tag cannot switch the data
+# controls off. A fully hardened resource still passes.
+data_class(rc) := strictest_class if class_unknown(rc)
 
-is_payment(after) if data_class(after) == "payment"
+data_class(rc) := rc.change.after.tags["data-class"] if not class_unknown(rc)
+
+# Terraform marks unknown values in `after_unknown`: `tags: true` when the whole
+# map is unknown, `tags: {"data-class": true}` when only that element is.
+class_unknown(rc) if rc.change.after_unknown.tags == true
+
+class_unknown(rc) if rc.change.after_unknown.tags["data-class"] == true
+
+is_sensitive(rc) if data_class(rc) in sensitive_classes
+
+is_payment(rc) if data_class(rc) == strictest_class
