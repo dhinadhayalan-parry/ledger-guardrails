@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: api
+  namespace: ledger
+spec:
+  containers:
+    - name: api
+      image: crledgersandbox.azurecr.io/ledger/settlement-api:latest
+      securityContext:
+        allowPrivilegeEscalation: false

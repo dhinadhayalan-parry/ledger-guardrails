@@ -1,0 +1,162 @@
+name: policy-gate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: policy-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TOOLS_DIR: ${{ github.workspace }}/.tools/bin
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+
+jobs:
+  policy-tests:
+    name: Policy tests and traceability
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Install pinned toolchain
+        run: |
+          python -m pip install --require-hashes --no-deps -r scripts/requirements.txt
+          scripts/install_tools.sh "$TOOLS_DIR"
+          echo "$TOOLS_DIR" >> "$GITHUB_PATH"
+
+      - name: Rego and admission tests (100% coverage gate)
+        run: make test
+
+      - name: Catalog traceability
+        run: make trace
+
+      - name: Terraform fmt and validate
+        run: make validate
+
+  offline-gate:
+    name: Gate on offline plan (no credentials)
+    needs: policy-tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install pinned toolchain
+        run: |
+          scripts/install_tools.sh "$TOOLS_DIR"
+          echo "$TOOLS_DIR" >> "$GITHUB_PATH"
+
+      - name: Non-compliant example is rejected with exactly the expected findings
+        run: make examples
+
+      - name: Sandbox stack passes the sandbox gate
+        run: |
+          set -o pipefail
+          make --no-print-directory gate ENV=sandbox 2>&1 | tee gate.txt
+
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo "### Policy gate: sandbox stack (offline plan)"
+            echo '```text'
+            grep -E '^(FAIL|WARN|[0-9]+ tests)' gate.txt 2>/dev/null || echo "gate did not run"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  azure-plan-gate:
+    name: Gate on OIDC plan (sandbox subscription)
+    needs: policy-tests
+    # Runs only once the Azure OIDC variables exist, and never for pull
+    # requests from forks, which cannot receive an OIDC token for this repo.
+    if: >-
+      vars.AZURE_PLAN_CLIENT_ID != '' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: plan
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      ARM_USE_OIDC: "true"
+      ARM_USE_AZUREAD: "true"
+      ARM_CLIENT_ID: ${{ vars.AZURE_PLAN_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      TF_VAR_name_suffix: ${{ vars.LEDGER_NAME_SUFFIX }}
+      TF_VAR_owner: ${{ vars.LEDGER_OWNER }}
+      TF_VAR_cost_center: ${{ vars.LEDGER_COST_CENTER }}
+      TF_VAR_postgres_entra_admin: ${{ vars.LEDGER_POSTGRES_ENTRA_ADMIN }}
+      TF_VAR_aks_admin_group_object_ids: ${{ vars.LEDGER_AKS_ADMIN_GROUP_IDS }}
+    defaults:
+      run:
+        working-directory: infra/envs/sandbox
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install pinned toolchain
+        working-directory: ${{ github.workspace }}
+        run: |
+          scripts/install_tools.sh "$TOOLS_DIR"
+          echo "$TOOLS_DIR" >> "$GITHUB_PATH"
+
+      - name: Terraform init (Entra ID auth to state, no storage keys)
+        env:
+          TFSTATE_RG: ${{ vars.TFSTATE_RESOURCE_GROUP }}
+          TFSTATE_SA: ${{ vars.TFSTATE_STORAGE_ACCOUNT }}
+          TFSTATE_CONTAINER: ${{ vars.TFSTATE_CONTAINER }}
+        run: |
+          for v in TFSTATE_RG TFSTATE_SA TFSTATE_CONTAINER; do
+            [[ -n "${!v}" ]] || { echo "::error::repository variable for $v is not set"; exit 1; }
+          done
+          terraform init -lockfile=readonly \
+            -backend-config="resource_group_name=${TFSTATE_RG}" \
+            -backend-config="storage_account_name=${TFSTATE_SA}" \
+            -backend-config="container_name=${TFSTATE_CONTAINER}" \
+            -backend-config="key=ledger/sandbox.tfstate"
+
+      - name: Terraform plan (read-only identity, no state lock)
+        run: |
+          terraform plan -lock=false -no-color -out=tfplan
+          terraform show -json tfplan > "$RUNNER_TEMP/plan.json"
+
+      - name: Policy gate
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -o pipefail
+          conftest test "$RUNNER_TEMP/plan.json" \
+            --policy policies/terraform \
+            --data controls/catalog.yaml \
+            --data config/envs/sandbox.yaml \
+            --no-color 2>&1 | tee "$RUNNER_TEMP/gate.txt"
+
+      - name: Job summary
+        if: always()
+        working-directory: ${{ github.workspace }}
+        run: |
+          {
+            echo "### Policy gate: sandbox subscription (OIDC plan)"
+            echo '```text'
+            grep -E '^(FAIL|WARN|[0-9]+ tests)' "$RUNNER_TEMP/gate.txt" 2>/dev/null || echo "gate did not run"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

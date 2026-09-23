@@ -1,0 +1,22 @@
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sLedgerAllowedRegistries
+metadata:
+  name: ledger-allowed-registries
+  annotations:
+    ledger.io/controls: LG-K8S-03
+spec:
+  enforcementAction: deny
+  match:
+    kinds:
+      - apiGroups: [""]
+        kinds: ["Pod"]
+    excludedNamespaces:
+      - kube-system
+      - gatekeeper-system
+  parameters:
+    # The sandbox registry (created in Phase 2). Per-environment values are
+    # supplied as Azure Policy assignment parameters once the templates are
+    # published through the AKS Azure Policy add-on.
+    registries:
+      - crledgersandbox.azurecr.io/
+    requireDigest: true

@@ -1,0 +1,69 @@
+kind: Suite
+apiVersion: test.gatekeeper.sh/v1alpha1
+metadata:
+  name: ledger-admission
+tests:
+  - name: LG-K8S-02 no privileged workloads
+    template: ../templates/k8sledgerprivileged.yaml
+    constraint: ../constraints/ledger-deny-privileged.yaml
+    cases:
+      - name: hardened pod is admitted
+        object: samples/pod-compliant.yaml
+        assertions:
+          - violations: no
+      - name: privileged container is denied
+        object: samples/pod-privileged.yaml
+        assertions:
+          - violations: 1
+            message: must not be privileged
+      - name: privilege escalation not disabled is denied
+        object: samples/pod-escalation-unset.yaml
+        assertions:
+          - violations: 1
+            message: allowPrivilegeEscalation
+      - name: host namespaces are denied
+        object: samples/pod-host-network.yaml
+        assertions:
+          - violations: 2
+          - violations: 1
+            message: spec.hostNetwork
+          - violations: 1
+            message: spec.hostPID
+      - name: privileged ephemeral debug container is denied
+        object: samples/pod-ephemeral-debug.yaml
+        assertions:
+          - violations: 2
+            message: '"debugger"'
+      - name: kube-system is excluded
+        object: samples/pod-kube-system-privileged.yaml
+        assertions:
+          - violations: no
+
+  - name: LG-K8S-03 approved registry only
+    template: ../templates/k8sledgerallowedregistries.yaml
+    constraint: ../constraints/ledger-allowed-registries.yaml
+    cases:
+      - name: ACR image pinned by digest is admitted
+        object: samples/pod-compliant.yaml
+        assertions:
+          - violations: no
+      - name: public registry is denied
+        object: samples/pod-public-registry.yaml
+        assertions:
+          - violations: 1
+            message: not from an approved registry
+      - name: look-alike registry host is denied
+        object: samples/pod-lookalike-registry.yaml
+        assertions:
+          - violations: 1
+            message: not from an approved registry
+      - name: mutable tag is denied
+        object: samples/pod-mutable-tag.yaml
+        assertions:
+          - violations: 1
+            message: pinned by digest
+      - name: ephemeral container from a public registry is denied
+        object: samples/pod-ephemeral-debug.yaml
+        assertions:
+          - violations: 2
+            message: '"debugger"'

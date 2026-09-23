@@ -1,0 +1,8 @@
+# Changes to what is enforced, or how, need a security review.
+/controls/                      @OWNER/security-reviewers
+/policies/                      @OWNER/security-reviewers
+/config/envs/                   @OWNER/security-reviewers
+/.github/workflows/             @OWNER/platform @OWNER/security-reviewers
+
+# Infrastructure changes are gated by the policies above.
+/infra/                         @OWNER/platform

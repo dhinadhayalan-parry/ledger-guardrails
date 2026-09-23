@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: cilium-agent
+  namespace: kube-system
+spec:
+  hostNetwork: true
+  containers:
+    - name: agent
+      image: mcr.microsoft.com/oss/cilium/cilium:1.17
+      securityContext:
+        privileged: true

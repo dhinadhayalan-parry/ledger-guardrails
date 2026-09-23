@@ -1,0 +1,55 @@
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8sledgerprivileged
+  annotations:
+    ledger.io/controls: LG-K8S-02
+    description: >-
+      Denies privileged containers, containers that do not explicitly disable
+      privilege escalation, and pods that share host namespaces. Covers
+      containers, initContainers and ephemeralContainers.
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sLedgerPrivileged
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8sledgerprivileged
+
+        host_namespace_fields := {"hostPID", "hostIPC", "hostNetwork"}
+
+        violation[{"msg": msg}] {
+          c := input_containers[_]
+          c.securityContext.privileged == true
+          msg := sprintf("[LG-K8S-02] container %q must not be privileged", [c.name])
+        }
+
+        violation[{"msg": msg}] {
+          c := input_containers[_]
+          not escalation_disabled(c)
+          msg := sprintf("[LG-K8S-02] container %q must set securityContext.allowPrivilegeEscalation: false", [c.name])
+        }
+
+        violation[{"msg": msg}] {
+          field := host_namespace_fields[_]
+          input.review.object.spec[field] == true
+          msg := sprintf("[LG-K8S-02] pod must not set spec.%v", [field])
+        }
+
+        escalation_disabled(c) {
+          c.securityContext.allowPrivilegeEscalation == false
+        }
+
+        input_containers[c] {
+          c := input.review.object.spec.containers[_]
+        }
+
+        input_containers[c] {
+          c := input.review.object.spec.initContainers[_]
+        }
+
+        input_containers[c] {
+          c := input.review.object.spec.ephemeralContainers[_]
+        }

@@ -1,0 +1,63 @@
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8sledgerallowedregistries
+  annotations:
+    ledger.io/controls: LG-K8S-03
+    description: >-
+      Requires every container image to come from an approved registry, and
+      optionally to be pinned by digest. Registry prefixes must end with "/"
+      so that a look-alike host such as "myacr.azurecr.io.evil.example" cannot
+      match "myacr.azurecr.io".
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sLedgerAllowedRegistries
+      validation:
+        openAPIV3Schema:
+          type: object
+          properties:
+            registries:
+              type: array
+              minItems: 1
+              items:
+                type: string
+                pattern: "^[a-z0-9.-]+(:[0-9]+)?/([a-z0-9._/-]+/)?$"
+            requireDigest:
+              type: boolean
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8sledgerallowedregistries
+
+        violation[{"msg": msg}] {
+          c := input_containers[_]
+          not approved_registry(c.image)
+          msg := sprintf("[LG-K8S-03] container %q image %q is not from an approved registry %v", [c.name, c.image, input.parameters.registries])
+        }
+
+        violation[{"msg": msg}] {
+          input.parameters.requireDigest == true
+          c := input_containers[_]
+          not contains(c.image, "@sha256:")
+          msg := sprintf("[LG-K8S-03] container %q image %q must be pinned by digest (@sha256:...)", [c.name, c.image])
+        }
+
+        approved_registry(image) {
+          registry := input.parameters.registries[_]
+          endswith(registry, "/")
+          startswith(image, registry)
+        }
+
+        input_containers[c] {
+          c := input.review.object.spec.containers[_]
+        }
+
+        input_containers[c] {
+          c := input.review.object.spec.initContainers[_]
+        }
+
+        input_containers[c] {
+          c := input.review.object.spec.ephemeralContainers[_]
+        }

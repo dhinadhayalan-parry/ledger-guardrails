@@ -1,0 +1,173 @@
+# Ledger security control catalog.
+#
+# Single source of truth: every control is written once in plain language,
+# mapped to the frameworks it satisfies, and linked to the policies that
+# enforce it. scripts/traceability.py fails CI if this file and the policy
+# code drift apart in either direction.
+#
+# mode.<env>:
+#   warn    - violations are reported in the PR but do not block
+#   enforce - violations block the PR
+#
+# Framework references:
+#   iso27001_2022 - ISO/IEC 27001:2022 Annex A control IDs
+#   soc2          - AICPA Trust Services Criteria (2017, revised points of focus 2022)
+#   cis_azure     - CIS Microsoft Azure Foundations Benchmark section names.
+#                   Recommendation IDs change between benchmark releases, so
+#                   they are mapped against a pinned release in Phase 1.
+controls:
+  LG-DATA-01:
+    title: Sensitive data encrypted at rest with customer-managed keys
+    requirement: >-
+      Storage accounts and databases tagged data-class=payment or
+      data-class=confidential encrypt data at rest with a customer-managed
+      key held in Key Vault.
+    frameworks:
+      iso27001_2022: [A.8.24]
+      soc2: [CC6.1]
+      cis_azure: [Storage Accounts, Database Services]
+    enforcement:
+      pr_gate: [ledger.terraform.storage, ledger.terraform.postgres]
+      admission: []
+    mode: {sandbox: enforce, prod: enforce}
+    owner: platform
+
+  LG-DATA-02:
+    title: Storage reachable only privately, over TLS 1.2+, with Entra ID auth
+    requirement: >-
+      Storage accounts disable public network access, anonymous blob access
+      and shared keys, accept HTTPS only, and require TLS 1.2 or higher.
+    frameworks:
+      iso27001_2022: [A.5.15, A.8.20, A.8.24]
+      soc2: [CC6.1, CC6.6, CC6.7]
+      cis_azure: [Storage Accounts]
+    enforcement:
+      pr_gate: [ledger.terraform.storage]
+      admission: []
+    mode: {sandbox: enforce, prod: enforce}
+    owner: platform
+
+  LG-DB-01:
+    title: PostgreSQL private and Entra ID only
+    requirement: >-
+      PostgreSQL Flexible Servers disable public network access, enable
+      Entra ID authentication and disable password authentication.
+    frameworks:
+      iso27001_2022: [A.8.5, A.8.20]
+      soc2: [CC6.1, CC6.6]
+      cis_azure: [Database Services]
+    enforcement:
+      pr_gate: [ledger.terraform.postgres]
+      admission: []
+    mode: {sandbox: enforce, prod: enforce}
+    owner: platform
+
+  LG-BCP-01:
+    title: Payment databases have geo-redundant backups
+    requirement: >-
+      Databases tagged data-class=payment keep geo-redundant backups so a
+      regional outage does not lose the recovery point.
+    frameworks:
+      iso27001_2022: [A.8.13, A.5.30]
+      soc2: [A1.2]
+      cis_azure: []
+    enforcement:
+      pr_gate: [ledger.terraform.postgres]
+      admission: []
+    # Sandbox runs without geo backups to save cost; the gate reports it
+    # without blocking. Production blocks.
+    mode: {sandbox: warn, prod: enforce}
+    owner: platform
+
+  LG-KEY-01:
+    title: Key Vault hardened against deletion and public access
+    requirement: >-
+      Key Vaults enable purge protection with 90-day soft delete, use Azure
+      RBAC for data-plane authorization, and disable public network access.
+    frameworks:
+      iso27001_2022: [A.5.15, A.8.24]
+      soc2: [CC6.1]
+      cis_azure: [Key Vault]
+    enforcement:
+      pr_gate: [ledger.terraform.keyvault]
+      admission: []
+    mode: {sandbox: enforce, prod: enforce}
+    owner: platform
+
+  LG-NET-01:
+    title: No management ports exposed to the internet
+    requirement: >-
+      Network security rules never allow inbound SSH (22) or RDP (3389)
+      from the internet. Administrative access goes through Bastion or
+      private connectivity.
+    frameworks:
+      iso27001_2022: [A.8.20, A.8.22]
+      soc2: [CC6.6]
+      cis_azure: [Networking]
+    enforcement:
+      pr_gate: [ledger.terraform.network]
+      admission: []
+    mode: {sandbox: enforce, prod: enforce}
+    owner: platform
+
+  LG-K8S-01:
+    title: AKS control plane hardened
+    requirement: >-
+      AKS clusters use a private API server, disable local accounts, use
+      Entra ID with Azure RBAC, run the Azure Policy add-on, enable workload
+      identity, and do not assign public IPs to nodes.
+    frameworks:
+      iso27001_2022: [A.8.2, A.8.5, A.8.9]
+      soc2: [CC6.1, CC6.3]
+      cis_azure: []
+    enforcement:
+      pr_gate: [ledger.terraform.aks]
+      admission: []
+    mode: {sandbox: enforce, prod: enforce}
+    owner: platform
+
+  LG-K8S-02:
+    title: No privileged workloads
+    requirement: >-
+      Pods do not run privileged containers, do not allow privilege
+      escalation, and do not share host namespaces.
+    frameworks:
+      iso27001_2022: [A.8.2, A.8.9]
+      soc2: [CC6.8]
+      cis_azure: []
+    enforcement:
+      pr_gate: []
+      admission: [K8sLedgerPrivileged]
+    mode: {sandbox: enforce, prod: enforce}
+    owner: platform
+
+  LG-K8S-03:
+    title: Images only from the approved registry
+    requirement: >-
+      Every container image is pulled from the organisation's Azure
+      Container Registry, where images are scanned and signed.
+    frameworks:
+      iso27001_2022: [A.8.19]
+      soc2: [CC6.8, CC8.1]
+      cis_azure: []
+    enforcement:
+      pr_gate: []
+      admission: [K8sLedgerAllowedRegistries]
+    mode: {sandbox: enforce, prod: enforce}
+    owner: platform
+
+  LG-GOV-01:
+    title: Resources carry ownership and data classification tags
+    requirement: >-
+      Every taggable resource carries owner, cost-center and data-class
+      tags, and data-class is one of public, internal, confidential or
+      payment. Classification drives which other controls apply.
+    frameworks:
+      iso27001_2022: [A.5.9, A.5.12]
+      soc2: [CC6.1]
+      cis_azure: []
+    enforcement:
+      pr_gate: [ledger.terraform.tags]
+      admission: []
+    mode: {sandbox: enforce, prod: enforce}
+    owner: platform
