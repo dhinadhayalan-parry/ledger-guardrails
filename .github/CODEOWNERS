@@ -1,8 +1,10 @@
 # Changes to what is enforced, or how, need a security review.
-/controls/                      @OWNER/security-reviewers
-/policies/                      @OWNER/security-reviewers
-/config/envs/                   @OWNER/security-reviewers
-/.github/workflows/             @OWNER/platform @OWNER/security-reviewers
+# Personal account: teams are not available, so the owner reviews everything.
+# In an organisation, split these into @<org>/security-reviewers and @<org>/platform.
+/controls/                      @dhinadhayalan-parry
+/policies/                      @dhinadhayalan-parry
+/config/envs/                   @dhinadhayalan-parry
+/.github/                       @dhinadhayalan-parry
 
 # Infrastructure changes are gated by the policies above.
-/infra/                         @OWNER/platform
+/infra/                         @dhinadhayalan-parry
